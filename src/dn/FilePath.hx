@@ -128,12 +128,16 @@ class FilePath {
 	}
 
 	public function appendDirectory(extraDirs:String) {
+		if( extraDirs==null )
+			return this;
+
 		var fp = fromDir(extraDirs);
 		if( fp.directory!=null )
 			if( directory==null )
 				directory = fp.directory;
 			else
 				directory += slash() + fp.directory;
+
 		return this;
 	}
 
@@ -682,8 +686,12 @@ class FilePath {
 	/**
 		Extract the file extension from a path. Returns null if it doesn't exist.
 	**/
-	public static inline function extractExtension(path:String) : Null<String> {
-		return FilePath.fromFile(path).extension;
+	public static inline function extractExtension(path:String, lowercase=false) : Null<String> {
+		var e = FilePath.fromFile(path).extension;
+		if( lowercase && e!=null )
+			return e.toLowerCase();
+		else
+			return e;
 	}
 
 

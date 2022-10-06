@@ -25,6 +25,7 @@ class HSprite extends h2d.Drawable implements SpriteInterface {
 	public var onAnimManAlloc : Null<AnimManager->Void>;
 	public var onFrameChange : Null<Void->Void>;
 
+	var customTile  : Null<h2d.Tile>;
 	var rawTile  : h2d.Tile;
 	var lastPage : Int;
 	public var tile(get,never) : h2d.Tile;
@@ -70,8 +71,16 @@ class HSprite extends h2d.Drawable implements SpriteInterface {
 		rawTile = h2d.Tile.fromTexture(t);
 	}
 
+	public function useCustomTile(t:h2d.Tile) {
+		customTile = t;
+	}
+
 	public function setEmptyTexture() {
+		#if debug
 		rawTile = h2d.Tile.fromColor(0x80FF00,4,4);
+		#else
+		rawTile = h2d.Tile.fromColor(0x0,4,4, 0);
+		#end
 	}
 
 	public inline function set( ?l:SpriteLib, ?g:String, ?frame=0, ?stopAllAnims=false ) {
@@ -175,8 +184,8 @@ class HSprite extends h2d.Drawable implements SpriteInterface {
 		return group.frames.length;
 	}
 
-	public inline function colorize(col:UInt, ?alpha=1.0) {
-		color.setColor(dn.Color.addAlphaF(col, alpha));
+	public inline function colorize(col:Col, ?alpha=1.0) {
+		color.setColor(dn.legacy.Color.addAlphaF(col, alpha));
 	}
 	public inline function uncolorize() {
 		color.set(1,1,1,1);
@@ -209,8 +218,19 @@ class HSprite extends h2d.Drawable implements SpriteInterface {
 	}
 
 	inline function get_tile() {
-		if( isReady() ) {
-			var fd = frameData;
+		if( customTile!=null ) {
+			if( pivot.isUsingCoord() ) {
+				customTile.dx = -Std.int(pivot.coordX);
+				customTile.dy = -Std.int(pivot.coordY);
+			}
+			else if( pivot.isUsingFactor() ) {
+				customTile.dx = -Std.int(customTile.width*pivot.centerFactorX);
+				customTile.dy = -Std.int(customTile.height*pivot.centerFactorY);
+			}
+			return customTile;
+		}
+		else if( isReady() ) {
+			final fd = frameData;
 			rawTile.setPosition(fd.x, fd.y);
 			rawTile.setSize(fd.wid, fd.hei);
 
@@ -223,7 +243,9 @@ class HSprite extends h2d.Drawable implements SpriteInterface {
 				rawTile.dx = -Std.int(fd.realWid*pivot.centerFactorX + fd.realX);
 				rawTile.dy = -Std.int(fd.realHei*pivot.centerFactorY + fd.realY);
 			}
-		} else {
+			return rawTile;
+		}
+		else {
 			if( pivot.isUsingCoord() ) {
 				rawTile.dx = -Std.int(pivot.coordX);
 				rawTile.dy = -Std.int(pivot.coordY);
@@ -232,8 +254,8 @@ class HSprite extends h2d.Drawable implements SpriteInterface {
 				rawTile.dx = -Std.int(rawTile.width*pivot.centerFactorX);
 				rawTile.dy = -Std.int(rawTile.height*pivot.centerFactorY);
 			}
+			return rawTile;
 		}
-		return rawTile;
 	}
 
 	override function draw( ctx : h2d.RenderContext ) {

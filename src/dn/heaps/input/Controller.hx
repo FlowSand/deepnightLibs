@@ -1,69 +1,73 @@
 package dn.heaps.input;
 
+#if macro
+import haxe.macro.Expr;
+import haxe.macro.Context;
+using haxe.macro.Tools;
+#else
 import hxd.Pad;
 import hxd.Key;
+#end
 
+enum abstract PadButton(Int) {
+	var A;
+	var B;
+	var X;
+	var Y;
 
-enum PadButton {
-	A;
-	B;
-	X;
-	Y;
+	var RT;
+	var RB;
 
-	RT;
-	RB;
+	var LT;
+	var LB;
 
-	LT;
-	LB;
+	var START;
+	var SELECT;
 
-	START;
-	SELECT;
+	var DPAD_UP;
+	var DPAD_DOWN;
+	var DPAD_LEFT;
+	var DPAD_RIGHT;
 
-	DPAD_UP;
-	DPAD_DOWN;
-	DPAD_LEFT;
-	DPAD_RIGHT;
+	var LSTICK_PUSH;
+	var RSTICK_PUSH;
 
-	LSTICK_PUSH;
-	RSTICK_PUSH;
+	var LSTICK_X;
+	var LSTICK_Y;
+	var LSTICK_UP;
+	var LSTICK_DOWN;
+	var LSTICK_LEFT;
+	var LSTICK_RIGHT;
 
-	LSTICK_X;
-	LSTICK_Y;
-	LSTICK_UP;
-	LSTICK_DOWN;
-	LSTICK_LEFT;
-	LSTICK_RIGHT;
-
-	RSTICK_X;
-	RSTICK_Y;
-	RSTICK_UP;
-	RSTICK_DOWN;
-	RSTICK_LEFT;
-	RSTICK_RIGHT;
+	var RSTICK_X;
+	var RSTICK_Y;
+	var RSTICK_UP;
+	var RSTICK_DOWN;
+	var RSTICK_LEFT;
+	var RSTICK_RIGHT;
 }
 
 
-enum ControllerType {
-	Keyboard;
-	Gamepad;
+enum abstract ControllerType(Int) {
+	var Keyboard;
+	var Gamepad;
 }
 
 
 
 /**
 	Controller wrapper for `hxd.Pad` and `hxd.Key` which provides a *much* more convenient binding system, to make keyboard/gamepad usage fully transparent.
-
 	For example, you may bind analog controls (ie. pad left stick) with keyboard keys, or have as many bindings as you want per game action.
 
 	**Example:**
 	```haxe
-	enum MyGameActions {
-		MoveX;
-		MoveY;
-		Jump;
-		Attack;
+	enum abstract MyGameActions(Int) to Int {
+		var MoveX;
+		var MoveY;
+		var Jump;
+		var Attack;
 	}
-	var ctrl = new Controller(MyGameActions);
+	var ctrl = Controller.createFromAbstractEnum(MyGameActions);
 	ctrl.bindKeyboardAsStickXY(MoveX,MoveY, hxd.Key.UP, hxd.Key.LEFT, hxd.Key.DOWN, hxd.Key.RIGHT);
 	ctrl.bindKeyboardAsStickXY(MoveX,MoveY, hxd.Key.W, hxd.Key.A, hxd.Key.S, hxd.Key.D);
 	ctrl.bindKeyboard(Jump, hxd.Key.SPACE);
@@ -85,7 +89,45 @@ enum ControllerType {
 	```
 **/
 @:allow(dn.heaps.input.ControllerAccess)
-class Controller<T:EnumValue> {
+class Controller<T:Int> {
+
+	/**
+		Create a new Controller instance using an existing **Int based Abstract Enum**.
+
+		```haxe
+		enum abstract MyGameActions(Int) to Int {
+			var MoveX;
+			var MoveY;
+			var Jump;
+		}
+		var c = Controller.createFromAbstractEnum(MyGameActions);
+		```
+	**/
+	public static macro function createFromAbstractEnum(abstractEnumType:haxe.macro.Expr) {
+		var allValues = MacroTools.getAbstractEnumValuesForMacros(abstractEnumType);
+
+		// Check enum underlying type
+		for(v in allValues)
+			switch v.valueExpr.expr {
+				case EConst(CInt(_)):
+				case _: Context.fatalError("Only abstract enum of Int is supported.", abstractEnumType.pos);
+			}
+
+		// Build `0=>"ValueName"` expressions
+		var valueInitExprs = [];
+		for(v in allValues)
+			valueInitExprs.push( macro $e{v.valueExpr} => $v{v.name} );
+
+		// Build Map declaration as `[ 0=>"ValueName", 1=>"ValueName" ]`
+		var mapInitExpr : Expr = { pos:Context.currentPos(), expr: EArrayDecl(valueInitExprs) }
+		return macro @:privateAccess new dn.heaps.input.Controller( $mapInitExpr );
+	}
+
+
+
+
+	#if !macro
+
 	#if heaps_aseprite
 	/**
 		Embed icons in Aseprite-Base64 format
@@ -142,10 +184,8 @@ class Controller<T:EnumValue> {
 	**/
 	public var onDisconnect : Void->Void;
 
-	/**
-		Enum type associated with this Controller
-	**/
-	var actionsEnum(default,null) : Enum<T>;
+	/** Resolve an action Int to a human readable String. **/
+	var actionNames : Map<Int,String> = new Map();
 
 
 	var allAccesses : Array<ControllerAccess<T>> = [];
@@ -155,15 +195,33 @@ class Controller<T:EnumValue> {
 	var exclusive : Null<ControllerAccess<T>>;
 	var globalDeadZone = 0.1;
 
+	var padButtonNames : Map<Int,String> = new Map();
+	var padButtonResolver : Map<String,Int> = new Map();
+
 
 	/**
 		Create a Controller that will bind keyboard or gamepad inputs with "actions" represented by the values of the `actionsEnum` parameter.
 	**/
-	public function new(actionsEnum:Enum<T>) {
-		this.actionsEnum = actionsEnum;
+	private function new(actionNames:Map<Int,String>) {
+		this.actionNames = actionNames;
+
+		var all = MacroTools.getAbstractEnumValues(PadButton);
+		for(v in all) {
+			padButtonNames.set(v.value, v.name);
+			padButtonResolver.set(v.name, v.value);
+		}
+
 		waitForPad();
 	}
 
+
+	public inline function getPadButtonName(b:PadButton) : String {
+		return padButtonNames.get(cast b);
+	}
+
+	public inline function resolvePadButton(name:String) : Null<PadButton> {
+		return cast padButtonResolver.get(name);
+	}
 
 
 	@:keep public function toString() {
@@ -237,10 +295,18 @@ class Controller<T:EnumValue> {
 
 
 	@:noCompletion
-	public inline function getPadButtonId(bt:PadButton) {
+	public inline function getPadButtonId(bt:Null<PadButton>) {
 		return bt!=null && enumMapping.exists(bt) ? enumMapping.get(bt) : -1;
 	}
 
+	public var disableRumble : Bool = false;
+	public var rumbleMultiplicator : Float = 1;
+
+	/** Rumbles physical controller, if supported **/
+	public inline function rumble(strength:Float, seconds:Float) {
+		if( pad.index>=0 && !disableRumble)
+			pad.rumble(strength*rumbleMultiplicator, seconds);
+	}
 
 	inline function set_onConnect(cb) {
 		onConnect = cb;
@@ -305,7 +371,7 @@ class Controller<T:EnumValue> {
 		pad = null;
 		enumMapping = null;
 		bindings = null;
-		actionsEnum = null;
+		actionNames = null;
 		destroyed = true;
 	}
 
@@ -313,7 +379,7 @@ class Controller<T:EnumValue> {
 		if( destroyed )
 			return false;
 		else {
-			if( action!=null && !bindings.exists(action) )
+			if( !bindings.exists(action) )
 				bindings.set(action, []);
 			bindings.get(action).push(b);
 			return true;
@@ -554,7 +620,7 @@ class Controller<T:EnumValue> {
 	**/
 	public function getPadIconTile(b:PadButton) : h2d.Tile {
 		#if heaps_aseprite
-			var baseId = Std.string(b);
+			var baseId = getPadButtonName(b);
 
 			// Suffix for vendor specific icons
 			var suffix = "";
@@ -657,7 +723,7 @@ class Controller<T:EnumValue> {
 			f.paddingHorizontal = 2;
 			f.paddingBottom = 2;
 			var tf = new h2d.Text(ICON_FONT, f);
-			tf.text = Std.string(b);
+			tf.text = getPadButtonName(b);
 			tf.textColor = 0x0;
 			tf.alpha = 0.5;
 		#end
@@ -736,14 +802,16 @@ class Controller<T:EnumValue> {
 		return f;
 	}
 
+	#end
 }
 
 
+#if !macro
 
 /**
 	Internal binding definition
 **/
-class InputBinding<T:EnumValue> {
+class InputBinding<T:Int> {
 	final analogDownDeadZone = 0.84;
 
 	var input : Controller<T>;
@@ -878,7 +946,7 @@ class InputBinding<T:EnumValue> {
 	/**
 		Create a binding for a stick axis (X/Y)
 	**/
-	public static function createPadStickAxis<E:EnumValue>(c:Controller<E>, action:E, stick:Int, isXaxis:Bool, invert=false) : InputBinding<E> {
+	public static function createPadStickAxis<E:Int>(c:Controller<E>, action:E, stick:Int, isXaxis:Bool, invert=false) : InputBinding<E> {
 		var b = new InputBinding(c, action);
 		if( stick==0 )
 			b.isLStick = true;
@@ -893,7 +961,7 @@ class InputBinding<T:EnumValue> {
 	/**
 		Create a binding for a specific stick direction (up, down, left or right)
 	**/
-	public static inline function createPadStickDirection<E:EnumValue>(c:Controller<E>, action:E, isLStick:Bool, isX:Bool, sign:Int) : InputBinding<E> {
+	public static inline function createPadStickDirection<E:Int>(c:Controller<E>, action:E, isLStick:Bool, isX:Bool, sign:Int) : InputBinding<E> {
 		var b = new InputBinding(c, action);
 		if( isLStick )
 			b.isLStick = true;
@@ -908,7 +976,7 @@ class InputBinding<T:EnumValue> {
 	/**
 		Create a basic keyboard key binding
 	**/
-	public static inline function createKeyboard<E:EnumValue>(c:Controller<E>, action:E, key:Int) : InputBinding<E> {
+	public static inline function createKeyboard<E:Int>(c:Controller<E>, action:E, key:Int) : InputBinding<E> {
 		var b = new InputBinding(c, action);
 		b.kbNeg = b.kbPos = key;
 		return b;
@@ -1019,4 +1087,29 @@ class InputBinding<T:EnumValue> {
 			return pad.isPressed( input.getPadButtonId(padButton) ) || Key.isPressed(kbPos) || Key.isPressed(kbNeg);
 		}
 	}
+
+	/**
+		Return TRUE if this binding is considered as "released". NOTE: this will only work for buttons and keys, NOT axis movements.
+	**/
+	public inline function isReleased(pad:hxd.Pad) {
+		_comboBreak = false;
+		for(cb in comboBindings)
+			if( !cb.isReleased(pad) ) {
+				_comboBreak = true;
+				break;
+			}
+
+		if( _comboBreak )
+			return false;
+		else
+			return
+				!isLStick && !isRStick && pad.isReleased( input.getPadButtonId(padButton) )
+				|| Key.isReleased(kbPos) || Key.isReleased(kbNeg)
+				|| pad.isReleased( input.getPadButtonId(padPos) ) || pad.isReleased( input.getPadButtonId(padNeg) )
+				|| ( isLStick || isRStick ) && signLimit==0 && dn.M.fabs( getValue(pad) ) < analogDownDeadZone
+				|| ( isLStick || isRStick ) && signLimit==1 && getValue(pad) < analogDownDeadZone
+				|| ( isLStick || isRStick ) && signLimit==-1 && getValue(pad) > -analogDownDeadZone;
+	}
 }
+
+#end

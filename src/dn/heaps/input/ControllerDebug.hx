@@ -4,7 +4,7 @@ package dn.heaps.input;
 /**
 	This class should only be instanciated by a ControllerAccess.
 **/
-class ControllerDebug<T:EnumValue> extends dn.Process {
+class ControllerDebug<T:Int> extends dn.Process {
 	static var BT_SIZE = 10;
 	static var RED = 0xff4400;
 	static var GREEN = 0x66ff00;
@@ -56,11 +56,15 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 		status = new h2d.Text(font, flow);
 		flow.addSpacing(4);
 
+		var allActions : Array<T> = [];
 		@:privateAccess
-		for(k in ca.input.actionsEnum.getConstructors()) {
-			var a = ca.input.actionsEnum.createByName(k);
-			buttons.set(a, createButton(a));
+		for( act in ca.input.actionNames.keys() ) {
+			var act : T = cast act;
+			allActions.push(act);
 		}
+		allActions.sort( (a,b)->Reflect.compare(a,b) );
+		for(act in allActions)
+			buttons.set(act, createButton(act));
 
 		flow.reflow();
 		if( afterRender!=null )
@@ -75,10 +79,16 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 		render();
 	}
 
-	@:keep override function toString() return getName();
+	@:keep override function toString() return getControllerName();
 
-	inline function getName() {
+	inline function getControllerName() {
 		return ca.toString();
+	}
+
+	inline function getActionName(act:T) {
+		return @:privateAccess ca.input.actionNames.exists(act)
+			? @:privateAccess ca.input.actionNames.get(act)
+			: "???";
 	}
 
 
@@ -124,7 +134,7 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 		bg.color = bt.color;
 
 		var tf = new h2d.Text(font, p.root);
-		tf.text = a.getName();
+		tf.text = getActionName(a);
 		tf.x = BT_SIZE+4;
 		tf.y = 4;
 
@@ -169,11 +179,11 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 			var alpha = isAnalog ? 0.4 : 1;
 			if( ca.isDown(a) ) {
 				tf.textColor = GREEN;
-				bt.color.setColor( dn.Color.addAlphaF(GREEN, alpha) );
+				bt.color.setColor( dn.legacy.Color.addAlphaF(GREEN, alpha) );
 			}
 			else {
 				tf.textColor = RED;
-				bt.color.setColor( dn.Color.addAlphaF(RED, alpha) );
+				bt.color.setColor( dn.legacy.Color.addAlphaF(RED, alpha) );
 			}
 
 			// Analog
@@ -200,10 +210,10 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 		p.onUpdateCb = ()->{
 			var v = ca.getAnalogValue(a);
 			bmp.x = BT_SIZE*0.5 + BT_SIZE*0.5*v;
-			bmp.color.setColor( dn.Color.addAlphaF(v!=0 ? GREEN : RED) );
-			bg.color.setColor( dn.Color.addAlphaF(v!=0 ? GREEN : RED, 0.45) );
+			bmp.color.setColor( dn.legacy.Color.addAlphaF(v!=0 ? GREEN : RED) );
+			bg.color.setColor( dn.legacy.Color.addAlphaF(v!=0 ? GREEN : RED, 0.45) );
 			tf.textColor = v!=0 ? GREEN : RED;
-			tf.text = a.getName()+" val="+dn.M.pretty(v,1)+" dist="+dn.M.pretty(ca.getAnalogDistXY(a),1);
+			tf.text = getActionName(a)+" val="+dn.M.pretty(v,1)+" dist="+dn.M.pretty(ca.getAnalogDistXY(a),1);
 		}
 	}
 
@@ -229,11 +239,11 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 			var a = ca.getAnalogAngleXY(xAxis, yAxis);
 			var d = ca.getAnalogDistXY(xAxis, yAxis);
 			tf.textColor = d<=0 ? RED : GREEN;
-			tf.text = xAxis.getName()+"/"+yAxis.getName()+" ang="+dn.M.pretty(a)+" dist="+dn.M.pretty(d,1);
+			tf.text = getActionName(xAxis)+"/"+getActionName(yAxis)+" ang="+dn.M.pretty(a)+" dist="+dn.M.pretty(d,1);
 
 			bt.x = BT_SIZE*0.5 + Math.cos(a) * BT_SIZE*0.3*d;
 			bt.y = BT_SIZE*0.5 + Math.sin(a) * BT_SIZE*0.3*d;
-			bg.color.setColor( Color.addAlphaF(tf.textColor,0.4) );
+			bg.color.setColor( dn.legacy.Color.addAlphaF(tf.textColor,0.4) );
 		}
 	}
 
@@ -263,7 +273,7 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 
 			bt.x = BT_SIZE*0.5 + Math.cos(a) * BT_SIZE*0.3*d;
 			bt.y = BT_SIZE*0.5 + Math.sin(a) * BT_SIZE*0.3*d;
-			bg.color.setColor( Color.addAlphaF(tf.textColor,0.4) );
+			bg.color.setColor( dn.legacy.Color.addAlphaF(tf.textColor,0.4) );
 		}
 	}
 
@@ -277,18 +287,18 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 
 		var bmp = new h2d.Bitmap(h2d.Tile.fromColor(0xffffff,BT_SIZE,BT_SIZE), p.root);
 		var tf = new h2d.Text(font, p.root);
-		tf.text = a.getName()+"(AF)";
+		tf.text = getActionName(a)+"(AF)";
 		tf.x = BT_SIZE+4;
 		tf.y = -4;
 
 		p.onUpdateCb = ()->{
 			if( ca.isPressedAutoFire(a) ) {
 				tf.textColor = GREEN;
-				bmp.color.setColor( dn.Color.addAlphaF(GREEN) );
+				bmp.color.setColor( dn.legacy.Color.addAlphaF(GREEN) );
 			}
 			else {
 				tf.textColor = RED;
-				bmp.color.setColor( dn.Color.addAlphaF(RED) );
+				bmp.color.setColor( dn.legacy.Color.addAlphaF(RED) );
 			}
 		}
 	}
@@ -302,7 +312,7 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 
 		var bmp = new h2d.Bitmap(h2d.Tile.fromColor(0xffffff,BT_SIZE,BT_SIZE), p.root);
 		var tf = new h2d.Text(font, p.root);
-		var base = a.getName()+"(H)";
+		var base = getActionName(a)+"(H)";
 		tf.x = BT_SIZE+4;
 		tf.y = -4;
 
@@ -312,7 +322,7 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 				tf.textColor = 0x55ff00;
 			}
 			else if( ca.isDown(a) )
-				tf.textColor = dn.Color.interpolateInt(0x000044, 0x0088ff, ca.getHoldRatio(a,durationS));
+				tf.textColor = dn.legacy.Color.interpolateInt(0x000044, 0x0088ff, ca.getHoldRatio(a,durationS));
 			else
 				tf.textColor = RED;
 
@@ -322,7 +332,7 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 			else
 				tf.scaleX += (1-tf.scaleX)*0.3;
 
-			bmp.color.setColor( dn.Color.addAlphaF(tf.textColor) );
+			bmp.color.setColor( dn.legacy.Color.addAlphaF(tf.textColor) );
 		}
 	}
 
@@ -340,7 +350,7 @@ class ControllerDebug<T:EnumValue> extends dn.Process {
 		if( connected && !ca.input.isPadConnected() )
 			onDisconnect();
 
-		status.text = getName()+"\n"+ (ca.input.isPadConnected() ? "Pad connected" : "Pad disconnected");
+		status.text = getControllerName()+"\n"+ (ca.input.isPadConnected() ? "Pad connected" : "Pad disconnected");
 		status.textColor = ca.input.isPadConnected() ? GREEN : RED;
 	}
 }

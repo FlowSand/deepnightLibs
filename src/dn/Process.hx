@@ -1,16 +1,23 @@
 package dn;
 
 import dn.Lib;
+import dn.struct.FixedArray;
+import dn.debug.MemTrack.measure as MM;
 
 class Process {
+	public static var MAX_PROCESSES = 1024;
+
 	/** FPS frequency of the `fixedUpdate` calls **/
 	public static var FIXED_UPDATE_FPS = 30;
 
 	public static var CUSTOM_STAGE_WIDTH  = -1;
 	public static var CUSTOM_STAGE_HEIGHT = -1;
 
+
 	static var UNIQ_ID = 0;
-	static var ROOTS : Array<Process> = [];
+	static var ROOTS : FixedArray<Process> = new FixedArray("RootProcesses", MAX_PROCESSES);
+	static var BEGINNING_OF_FRAME_CALLBACKS : FixedArray< Void->Void > = new FixedArray(256);
+	static var END_OF_FRAME_CALLBACKS : FixedArray< Void->Void > = new FixedArray(256);
 
 	/** If TRUE, each Process.onResize() will be called *once* at the end of the frame **/
 	static var RESIZE_REQUESTED = true;
@@ -64,7 +71,7 @@ class Process {
 	/** Process display name **/
 	public var name : Null<String>;
 
-	var children : Array<Process>;
+	var children : FixedArray<Process>;
 
 	/** Delayer allows for callbacks to be called in a future frame **/
 	public var delayer : dn.Delayer;
@@ -110,7 +117,7 @@ class Process {
 
 	public function init(){
 		uniqId = UNIQ_ID++;
-		children = [];
+		children = new FixedArray(MAX_PROCESSES);
 		_manuallyPaused = false;
 		destroyed = false;
 		ftime = 0;
@@ -319,8 +326,15 @@ class Process {
 	}
 
 	/** Some human readable name for this Process instance **/
+	var _cachedClassName : String;
 	public inline function getDisplayName() {
-		return name!=null ? name : Type.getClassName( Type.getClass(this) );
+		return name!=null
+			? name
+			: {
+				if( _cachedClassName==null )
+					_cachedClassName = Type.getClassName( Type.getClass(this) );
+				return _cachedClassName;
+			}
 	}
 
 
@@ -398,7 +412,7 @@ class Process {
 	inline function anyParentPaused() {
 		return parent!=null ? parent.isPaused() : false;
 	}
-	public inline function isPaused() {
+	public function isPaused() {
 		if( _manuallyPaused )
 			return true;
 		else
@@ -558,10 +572,11 @@ class Process {
 				_doPostUpdate(c);
 	}
 
-	static function _garbageCollector(plist:Array<Process>) {
+	static function _garbageCollector(plist:FixedArray<Process>) {
 		var i = 0;
-		while (i < plist.length) {
-			var p = plist[i];
+		var p : Process;
+		while (i < plist.allocated) {
+			p = plist.get(i);
 			if( p.destroyed )
 				_disposeProcess(p);
 			else {
@@ -579,13 +594,14 @@ class Process {
 
 		// Tools
 		p.delayer.destroy();
-		p.cd.destroy();
+		p.udelayer.destroy();
+		p.cd.dispose();
+		p.ucd.dispose();
 		p.tw.destroy();
 
 		// Unregister from lists
-		if (p.parent != null) {
+		if (p.parent != null)
 			p.parent.children.remove(p);
-		}
 		else
 			ROOTS.remove(p);
 
@@ -608,8 +624,10 @@ class Process {
 		// Clean up
 		p.parent = null;
 		p.children = null;
-		p.delayer = null;
 		p.cd = null;
+		p.ucd = null;
+		p.delayer = null;
+		p.udelayer = null;
 		p.tw = null;
 		#if( heaps || h3d )
 		p.root = null;
@@ -627,11 +645,20 @@ class Process {
 		}
 	}
 
+
+
 	// -----------------------------------------------------------------------
 	// Public static API
 	// -----------------------------------------------------------------------
 
 	public static function updateAll(utmod:Float) {
+		// Beginning of frame callbacks
+		if( BEGINNING_OF_FRAME_CALLBACKS.allocated>0 ) {
+			for( cb in BEGINNING_OF_FRAME_CALLBACKS )
+				cb();
+			BEGINNING_OF_FRAME_CALLBACKS.empty();
+		}
+
 		for (p in ROOTS)
 			_doPreUpdate(p, utmod);
 
@@ -651,6 +678,13 @@ class Process {
 		}
 
 		_garbageCollector(ROOTS);
+
+		// End of frame callbacks
+		if( END_OF_FRAME_CALLBACKS.allocated>0 ) {
+			for(cb in END_OF_FRAME_CALLBACKS)
+				cb();
+			END_OF_FRAME_CALLBACKS.empty();
+		}
 	}
 
 	/** Request a onResize() call for all processes. If `immediately` is false (default), the call will only happen **once** and **at the end** of current frame. **/
@@ -661,6 +695,26 @@ class Process {
 		}
 		else
 			RESIZE_REQUESTED = true;
+	}
+
+	/** Request a onResize() call for ALL processes at the end of current frame. **/
+	inline function emitResizeAtEndOfFrame() {
+		resizeAll(false);
+	}
+
+	/** Request a onResize() call for ALL processes immediately. **/
+	inline function emitResizeNow() {
+		resizeAll(true);
+	}
+
+	/** Run a callback at the very beginning of the next frame, before any process. **/
+	public static function callAtTheBeginningOfNextFrame( cb:Void->Void ) {
+		BEGINNING_OF_FRAME_CALLBACKS.push(cb);
+	}
+
+	/** Run a callback at the absolute end of frame, after all processes and after dead processes garbage collection. **/
+	public static function callAtTheEndOfCurrentFrame( cb:Void->Void ) {
+		END_OF_FRAME_CALLBACKS.push(cb);
 	}
 
 
@@ -674,6 +728,7 @@ class Process {
 		CiAssert.isNotNull(root.udelayer);
 		CiAssert.isNotNull(root.tw);
 		CiAssert.equals( root.tmod, 1 );
+		CiAssert.equals( ROOTS.allocated, 1);
 
 		// Pause management
 		CiAssert.equals( root.togglePause(), true );
@@ -681,7 +736,7 @@ class Process {
 
 		var c1 = new Process(root);
 		CiAssert.isNotNull(c1);
-		CiAssert.equals(root.children.length, 1);
+		CiAssert.equals(root.children.allocated, 1);
 		CiAssert.isFalse( c1.isPaused() );
 		root.pause();
 		CiAssert.isTrue( c1.isPaused() );
@@ -689,7 +744,7 @@ class Process {
 
 		var c2 = new Process(root);
 		CiAssert.isNotNull(c2);
-		CiAssert.equals(root.children.length, 2);
+		CiAssert.equals(root.children.allocated, 2);
 		CiAssert.equals(c2.parent, root);
 		CiAssert.isFalse( c2.isPaused() );
 		root.pause();
@@ -701,11 +756,12 @@ class Process {
 		CiAssert.isFalse( c1.destroyed );
 		CiAssert.isTrue( c2.destroyed );
 		CiAssert.isFalse( root.destroyed );
-		CiAssert.equals(root.children.length, 1);
+		CiAssert.equals(root.children.allocated, 1);
 		root.destroy();
 		updateAll(1); // force GC
 		CiAssert.isTrue( c1.destroyed );
 		CiAssert.isTrue( c2.destroyed );
 		CiAssert.isTrue( root.destroyed );
+		CiAssert.equals( ROOTS.allocated, 0);
 	}
 }

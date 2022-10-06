@@ -131,20 +131,26 @@ class M {
 	 */
 	inline public static var LN2 = 0.6931471805599453;
 
-	/**
-	 * Math.PI / 2.
-	 */
+	/* Math.PI/2 */
 	inline public static var PIHALF = 1.5707963267948966;
 
-	/**
-	 * Math.PI.
-	 */
-	inline public static var PI = 3.141592653589793;
+	/* Math.PI */
+	inline public static var PI   = 3.141592653589793;
 
-	/**
-	 * 2 * Math.PI.
-	 */
-	inline public static var PI2 = 6.283185307179586;
+	/* Math.PI*2 */
+	inline public static var PI2  = 6.283185307179586;
+
+	/* Math.PI*2 */
+	inline public static var A360 = PI2;
+
+	/* Math.PI */
+	inline public static var A180 = PI;
+
+	/* Math.PI/2 */
+	inline public static var A90  = PIHALF;
+
+	/* Math.PI/4 */
+	inline public static var A45  = 0.785398163397448;
 
 	/**
 	 * Default system epsilon.
@@ -205,6 +211,13 @@ class M {
 	}
 	inline public static function signEq(x:Float,y:Float):Bool {
 		return M.sign(x)==M.sign(y);
+	}
+
+	/**
+		Always return a non-zero value
+	**/
+	public static inline function notZero(v:Float, ifZero=0.000001) {
+		return v==0 ? ifZero : v;
 	}
 
 	/**
@@ -805,6 +818,7 @@ class M {
 		return Math.atan2(ty-fy, tx-fx);
 	}
 
+	/** Round a float to given precision **/
 	public static inline function pretty(v:Float, precision=2) : Float {
 		if( precision<=0 )
 			return round(v);
@@ -812,6 +826,46 @@ class M {
 			var d = Math.pow(10,precision);
 			return round(v*d)/d;
 		}
+	}
+
+	/**
+		Round a float to given precision, adding leading zeros if needed.
+		Examplex:
+			0.1234, precision 2, returns 0.12
+			0.1, precision 2, returns 0.10
+	**/
+	public static inline function prettyPad(v:Float, precision=2) : String {
+		var str = Std.string( pretty(v,precision) );
+		while( str.length-(str.lastIndexOf(".")+1) < precision )
+			str+="0";
+		return str;
+	}
+
+	public static inline function groupNumbers(v:Int, sep=" ") : String {
+		var str = Std.string(v);
+		if( str.length<=3 )
+			return str;
+		else {
+			var i = 1;
+			var out = "";
+			while( i<=str.length ) {
+				out = str.substr(-i,1) + out;
+				if( i%3==0 && i<str.length )
+					out = sep+out;
+				i++;
+			}
+			return out;
+		}
+	}
+
+	public static inline function unit(v:Float, precision=1) : String {
+		return M.fabs(v)<1000 ? Std.string( pretty(v, precision) )
+			: M.fabs(v)<1000000 ? M.pretty(v/1000, precision)+"K"
+			: M.pretty(v/1000000, precision)+"M";
+	}
+
+	public static inline function unitMega(v:Float, precision=1) : String {
+		return M.pretty(v/1000000, precision) + "M";
 	}
 
 
@@ -846,10 +900,17 @@ class M {
 	}
 
 	/**
-		Set a SIGNED integer bit to 1 (index starts from 0)
+		Set a SIGNED integer bit to 1 (bit index starts from 0)
 	**/
 	public static inline function setBit(baseValue:Int, bitIdx:Int) : Int {
 		return baseValue | ( 1<<bitIdx );
+	}
+
+	/**
+		Set a SIGNED integer bit to 0 (bit index starts from 0)
+	**/
+	public static inline function unsetBit(baseValue:Int, bitIdx:Int) : Int {
+		return baseValue & ~( 1<<bitIdx );
 	}
 
 	public static function makeBitsFromArray(bools:Array<Bool>) : Int {
@@ -972,6 +1033,16 @@ class M {
 	}
 
 
+	/**
+		Return a 0-1 ratio by "clamping" `r` to [min,max].
+		 - If r<=min, this returns 0,
+		 - If r>=min and r<=max, this returns 0 to 1,
+		 - If r>=max, this returns 1,
+	**/
+	public static inline function subRatio(r:Float, min:Float, max:Float) : Float {
+		return M.fclamp( (r-min) / (max-min), 0, 1 );
+	}
+
 	@:noCompletion
 	public static function __test() {
 		// TODO more tests
@@ -984,13 +1055,29 @@ class M {
 		CiAssert.isTrue( !M.isValidNumber(null) );
 		CiAssert.isTrue( !M.isValidNumber(1/0) );
 
-		// Bit tests
+		// Bit set
 		CiAssert.equals( M.setBit(0,0), 1 );
 		CiAssert.equals( M.setBit(0,3), 8 );
+		CiAssert.equals( M.setBit(16,0), 17 );
+		CiAssert.equals( M.setBit(16,1), 18 );
+
+		// Bit unset
+		CiAssert.equals( M.unsetBit(9,0), 8 );
+		CiAssert.equals( M.unsetBit(9,3), 1 );
+		CiAssert.equals( M.unsetBit(25,0), 24 );
+		CiAssert.equals( M.unsetBit(25,1), 25 );
+		CiAssert.equals( M.unsetBit(25,3), 17 );
+		CiAssert.equals( M.unsetBit(25,4), 9 );
+		CiAssert.equals( M.unsetBit(25,5), 25 );
+		CiAssert.equals( M.unsetBit(1073741824,30), 0 );
+
+		// Bit has
 		CiAssert.isTrue( M.hasBit(1,0) );
 		CiAssert.isTrue( M.hasBit(3,0) );
 		CiAssert.isTrue( M.hasBit(3,1) );
 		CiAssert.isTrue( M.hasBit(1073741824,30) );
+
+
 		var uIntWithBit31 = M.setUnsignedBit(0,31);
 		CiAssert.isTrue( M.hasUnsignedBit(uIntWithBit31,31) );
 		CiAssert.isTrue( uIntWithBit31>0 );
@@ -1023,5 +1110,32 @@ class M {
 		CiAssert.equals( bezier4(0,  0, 0.4, 0.9, 1 ), 0 );
 		CiAssert.equals( bezier4(0.5,  0, 0.4, 0.9, 1 ), 0.6125 );
 		CiAssert.equals( bezier4(1,  0, 0.4, 0.9, 1 ), 1 );
+
+		// Prettifiers
+		CiAssert.equals( M.pretty(1.123,1), 1.1 );
+		CiAssert.equals( M.pretty(1.123,2), 1.12 );
+
+		CiAssert.equals( M.groupNumbers(123), "123" );
+		CiAssert.equals( M.groupNumbers(1234), "1 234" );
+		CiAssert.equals( M.groupNumbers(12345), "12 345" );
+		CiAssert.equals( M.groupNumbers(1234567), "1 234 567" );
+
+		CiAssert.equals( M.unit(1000), "1K" );
+		CiAssert.equals( M.unit(1234), "1.2K" );
+		CiAssert.equals( M.unit(1234,2), "1.23K" );
+		CiAssert.equals( M.unit(1000000), "1M" );
+		CiAssert.equals( M.unit(1500000), "1.5M" );
+
+		CiAssert.equals( M.unitMega(1234), "0M" );
+		CiAssert.equals( M.unitMega(123456), "0.1M" );
+		CiAssert.equals( M.unitMega(1234567), "1.2M" );
+		CiAssert.equals( M.unitMega(1234567,2), "1.23M" );
+		CiAssert.equals( M.unitMega(1500000), "1.5M" );
+
+		CiAssert.equals( M.subRatio(0.1,  0.5, 0.7), 0 );
+		CiAssert.equals( M.subRatio(0.5,  0.5, 0.7), 0 );
+		CiAssert.equals( M.subRatio(0.6,  0.5, 0.7), 0.5 );
+		CiAssert.equals( M.subRatio(0.7,  0.5, 0.7), 1 );
+		CiAssert.equals( M.subRatio(0.9,  0.5, 0.7), 1 );
 	}
 }

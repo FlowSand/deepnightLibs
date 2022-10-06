@@ -2,6 +2,7 @@ package dn;
 
 import haxe.macro.Expr;
 import haxe.macro.Context;
+using haxe.macro.Tools;
 
 class MacroTools {
 	public static macro function error(err:ExprOf<String>) {
@@ -206,5 +207,76 @@ class MacroTools {
 		return null;
 	}
 
+
+
+	/**
+		Return an Array<String> containing all the "values" from an Abstract Enum
+	**/
+	public static function getAbstractEnumValuesForMacros(abstractEnumType:haxe.macro.Expr) : Array<{ name:String, valueExpr:Expr }> {
+		var typeName = abstractEnumType.toString();
+		var type = try Context.getType(typeName) catch(_) {
+			Context.fatalError('Type not found: $typeName', abstractEnumType.pos);
+			null;
+		}
+
+		var all = [];
+		switch type.follow() {
+			case TAbstract(t, params):
+				for( field in t.get().impl.get().statics.get() ) {
+					var valueExpr = switch field.expr().expr {
+						case TCast(t,_):
+							switch t.expr {
+								case TConst( TInt(v) ): macro $v{v};
+								case TConst( TString(v) ): macro $v{v};
+								case _: null;
+							}
+						case _: null;
+					}
+
+					if( valueExpr==null )
+						Context.fatalError("Only abstract enum of Int or String are supported.", abstractEnumType.pos);
+
+					all.push({
+						name: field.name,
+						valueExpr: valueExpr,
+					});
+				}
+
+			case _:
+				Context.fatalError('Not an abstract enum: $typeName', abstractEnumType.pos);
+		}
+
+		return all;
+	}
 	#end
+
+
+	/**
+		Create an `Array<{ name:String, value:XXX }>` from an Abstract Enum, where XXX type depends on the underlying enum type (Int or String).
+	**/
+	public static macro function getAbstractEnumValues(abstractEnumType:haxe.macro.Expr) {
+		var allValues = getAbstractEnumValuesForMacros(abstractEnumType);
+
+		// Check enum underlying type
+		if( allValues.length==0 )
+			Context.fatalError("Abstract enum has no values.", abstractEnumType.pos);
+		var underlyingComplexType = switch allValues[0].valueExpr.expr {
+			case EConst(CInt(_)): macro : Int;
+			case EConst(CString(_)): macro : String;
+			case _: Context.fatalError("Only supports abstract enum of Int or String.", abstractEnumType.pos);
+		}
+
+		// Build anonymous objects of value expressions
+		var valueInitExprs = [];
+		for(v in allValues)
+			valueInitExprs.push( macro { name: $v{v.name}, value: $e{v.valueExpr} } );
+
+		// Build Array declaration as `[ { name:..., value:... }, ... ]`
+		var arrayInitExpr : Expr = { pos:Context.currentPos(), expr: EArrayDecl(valueInitExprs) }
+		return macro {
+			var arr : Array<{ name:String, value:$underlyingComplexType }>;
+			arr = $arrayInitExpr;
+			arr;
+		}
+	}
 }
